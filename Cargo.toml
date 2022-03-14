@@ -2,6 +2,11 @@
 name = "rig"
 version = "0.1.0"
 edition = "2021"
+authors = ["icon [drew@parker.systems]"]
+description = "simple dns tool for a more modern age"
+readme = "./README.md"
+license = "MIT"
+repository = "https://github.com/callrbx/rig-dns-tool"
 
 [lib]
 name = "librig"
@@ -13,6 +18,6 @@ path = "src/rig.rs"
 
 [dependencies]
 bitfield = "*"
-bincode = "1.3.3"
+bincode = "*"
 serde = {version = "*", features = ["derive"]}
 rand = "*"
