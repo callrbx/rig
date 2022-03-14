@@ -21,3 +21,4 @@ bitfield = "*"
 bincode = "*"
 serde = {version = "*", features = ["derive"]}
 rand = "*"
+byteorder = "*"
