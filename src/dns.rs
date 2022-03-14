@@ -1,8 +1,15 @@
-use std::io::{BufWriter, Write};
+use byteorder::{BigEndian, ReadBytesExt};
+use std::io::Cursor;
+use std::net::UdpSocket;
 
 use bincode::Options;
 use bitfield::bitfield;
 use serde::{Deserialize, Serialize};
+
+const ADDR: &str = "1.1.1.1:53";
+const BUF_SIZE: usize = 1024;
+const HDR_SIZE: usize = 12;
+const RESP_DATA_SIZE: usize = 12;
 
 // TYPE fields are used in resource records - RFC 1035 3.2.2
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
@@ -25,6 +32,33 @@ pub enum RecordType {
     TXT,   // 16 text strings
 }
 
+impl RecordType {
+    fn from_u16(value: u16) -> RecordType {
+        match value {
+            1 => RecordType::A,
+            2 => RecordType::NS,
+            3 => RecordType::MD,
+            4 => RecordType::MF,
+            5 => RecordType::CNAME,
+            6 => RecordType::SOA,
+            7 => RecordType::MB,
+            8 => RecordType::MG,
+            9 => RecordType::MR,
+            10 => RecordType::NULL,
+            11 => RecordType::WKS,
+            12 => RecordType::PTR,
+            13 => RecordType::HINFO,
+            14 => RecordType::MINFO,
+            15 => RecordType::MX,
+            16 => RecordType::TXT,
+            _ => {
+                eprintln!("Invalid Type: {}", value);
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
 // CLASS fields appear in resource records - RFC 1035 3.2.4
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub enum RecordClass {
@@ -34,8 +68,20 @@ pub enum RecordClass {
     HS,     // 4 Hesiod [Dyer 87]
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-enum Class {}
+impl RecordClass {
+    fn from_u16(value: u16) -> RecordClass {
+        match value {
+            1 => RecordClass::IN,
+            2 => RecordClass::CS,
+            3 => RecordClass::CH,
+            4 => RecordClass::HS,
+            _ => {
+                eprintln!("Invalid Class: {}", value);
+                std::process::exit(1);
+            }
+        }
+    }
+}
 
 // Header Flags bitfield
 bitfield! {
@@ -80,6 +126,26 @@ impl Header {
     }
 }
 
+fn get_name(bytes: &Vec<u8>) -> (String, usize) {
+    let mut ptr = 0;
+    let mut label: Vec<u8> = Vec::new();
+    loop {
+        let t = bytes[ptr];
+        if t == 0 {
+            break;
+        }
+        if !t.is_ascii_alphanumeric() {
+            label.extend(&bytes[(ptr + 1)..((t as usize) + ptr + 1)]);
+            label.push('.' as u8);
+        }
+        ptr += t as usize + 1;
+    }
+
+    let name = String::from_utf8(label).expect("Failed to parse name");
+
+    return (name, ptr + 1);
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Question {
     name: Vec<u8>,
@@ -103,6 +169,26 @@ impl Question {
         return label;
     }
 
+    fn from_bytes(bytes: Vec<u8>) -> (Self, usize) {
+        let (name, mut ptr) = get_name(&bytes);
+        let mut cur = Cursor::new(bytes[ptr..].to_vec());
+
+        let rtype =
+            RecordType::from_u16(cur.read_u16::<BigEndian>().expect("failed to parse type"));
+        let rclass =
+            RecordClass::from_u16(cur.read_u16::<BigEndian>().expect("failed to parse class"));
+
+        let question = Self {
+            name: bytes[..ptr].to_vec(),
+            rtype: rtype,
+            rclass: rclass,
+        };
+
+        ptr += name.len() + 1; //advance remaining bytes past question
+
+        return (question, ptr);
+    }
+
     fn new(hostname: String, rtype: RecordType, rclass: RecordClass) -> Self {
         Self {
             name: Self::generate_label(hostname),
@@ -114,11 +200,46 @@ impl Question {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Answer {
-    name: Vec<u8>,
+    domain: u16,
     rtype: RecordType,
     rclass: RecordClass,
     ttl: u32,
     len: u16,
+    data: Vec<u8>,
+}
+
+impl Answer {
+    fn from_bytes(bytes: Vec<u8>) -> (Self, usize) {
+        let mut ptr = 0;
+
+        let mut cur = Cursor::new(&bytes);
+
+        let domain = cur.read_u16::<BigEndian>().expect("failed to parse domain");
+        let rtype =
+            RecordType::from_u16(cur.read_u16::<BigEndian>().expect("failed to parse type"));
+        let rclass =
+            RecordClass::from_u16(cur.read_u16::<BigEndian>().expect("failed to parse class"));
+        let ttl = cur.read_u32::<BigEndian>().expect("failed to parse ttl");
+        let data_len = cur
+            .read_u16::<BigEndian>()
+            .expect("failed to parse data len");
+
+        let data: Vec<u8> =
+            bytes[cur.position() as usize..cur.position() as usize + data_len as usize].to_vec();
+
+        let ans = Answer {
+            domain: domain,
+            rtype: rtype,
+            rclass: rclass,
+            ttl: ttl,
+            len: data_len,
+            data: data,
+        };
+
+        ptr += RESP_DATA_SIZE + data_len as usize;
+
+        return (ans, ptr);
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -128,7 +249,21 @@ pub struct Query {
 }
 
 impl Query {
-    pub fn new(hostname: String, rtype: RecordType, rclass: RecordClass) -> Self {
+    pub fn do_query(hostname: String, rtype: RecordType, rclass: RecordClass) -> Option<Response> {
+        let mut query = Self::new(hostname, rtype, rclass);
+
+        let response = match query.send_query(ADDR.to_string()) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Query failed: {}", e);
+                return None;
+            }
+        };
+
+        return Some(response);
+    }
+
+    fn new(hostname: String, rtype: RecordType, rclass: RecordClass) -> Self {
         let mut query = Query {
             header: Header::new(None),
             question: Question::new(hostname, rtype, rclass),
@@ -185,20 +320,68 @@ impl Query {
         return ser_query;
     }
 
-    pub fn dump_query(&mut self) {
-        let encoded = self.query_serialize();
+    fn send_query(&mut self, addr: String) -> std::io::Result<Response> {
+        let packet_bytes = self.query_serialize();
 
-        let mut writer = BufWriter::new(std::io::stdout());
+        let socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to bind to address");
 
-        writer.write(&encoded).unwrap();
-        writer.flush().unwrap();
+        socket
+            .send_to(&packet_bytes, addr)
+            .expect("Failed to connect to DNS server");
+
+        let mut buf = [0; BUF_SIZE];
+        let mut rvec: Vec<u8> = Vec::new();
+        match socket.recv(&mut buf) {
+            Ok(size) => rvec.extend(&buf[..size]),
+            Err(e) => println!("recv function failed: {:?}", e),
+        }
+
+        let resp = Response::from_bytes(rvec);
+        return Ok(resp);
     }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Response {
     header: Header,
+    question: Question,
     answer: Vec<Answer>,
+}
+
+impl Response {
+    fn from_bytes(bytes: Vec<u8>) -> Self {
+        let mut _ptr = 0;
+
+        if bytes.len() < HDR_SIZE {
+            eprintln!("Failed to deserialize header; only {} bytes", bytes.len());
+            std::process::exit(1);
+        }
+
+        let header: Header = bincode::DefaultOptions::new()
+            .with_big_endian()
+            .with_fixint_encoding()
+            .deserialize(&bytes[..HDR_SIZE])
+            .unwrap();
+
+        let (question, ptr) = Question::from_bytes(bytes[HDR_SIZE..].to_vec());
+        _ptr += ptr;
+
+        let mut answers: Vec<Answer> = Vec::new();
+
+        for _ in 0..header.an_count {
+            let (answer, ptr) = Answer::from_bytes(bytes[_ptr..].to_vec());
+            _ptr += ptr;
+            answers.push(answer);
+        }
+
+        let resp = Response {
+            header: header,
+            question: question,
+            answer: answers,
+        };
+
+        return resp;
+    }
 }
 
 #[cfg(test)]
@@ -261,5 +444,47 @@ mod tests {
 
         // ignore the randomized ID
         assert!(q.query_serialize()[2..] == expected[2..]);
+    }
+
+    #[test]
+    fn test_record_type_convert() {
+        assert!(RecordType::from_u16(1) == RecordType::A);
+        assert!(RecordType::from_u16(2) == RecordType::NS);
+        assert!(RecordType::from_u16(3) == RecordType::MD);
+        assert!(RecordType::from_u16(4) == RecordType::MF);
+        assert!(RecordType::from_u16(5) == RecordType::CNAME);
+        assert!(RecordType::from_u16(6) == RecordType::SOA);
+        assert!(RecordType::from_u16(7) == RecordType::MB);
+        assert!(RecordType::from_u16(8) == RecordType::MG);
+        assert!(RecordType::from_u16(9) == RecordType::MR);
+        assert!(RecordType::from_u16(10) == RecordType::NULL);
+        assert!(RecordType::from_u16(11) == RecordType::WKS);
+        assert!(RecordType::from_u16(12) == RecordType::PTR);
+        assert!(RecordType::from_u16(13) == RecordType::HINFO);
+        assert!(RecordType::from_u16(14) == RecordType::MINFO);
+        assert!(RecordType::from_u16(15) == RecordType::MX);
+        assert!(RecordType::from_u16(16) == RecordType::TXT);
+    }
+
+    #[test]
+    fn test_record_class_convert() {
+        assert!(RecordClass::from_u16(1) == RecordClass::IN);
+        assert!(RecordClass::from_u16(2) == RecordClass::CS);
+        assert!(RecordClass::from_u16(3) == RecordClass::CH);
+        assert!(RecordClass::from_u16(4) == RecordClass::HS);
+    }
+
+    #[test]
+    fn test_get_name() {
+        let bytes: Vec<u8> = vec![6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0];
+
+        assert!(get_name(&bytes) == (String::from("google.com."), 12));
+    }
+
+    #[test]
+    fn test_gen_label() {
+        let bytes: Vec<u8> = vec![6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0];
+
+        assert!(Question::generate_label("google.com".to_string()) == bytes);
     }
 }

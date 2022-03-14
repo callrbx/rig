@@ -1,7 +1,13 @@
 mod dns;
 
 pub fn do_lookup(hostname: String) {
-    let mut query = dns::Query::new(hostname, dns::RecordType::A, dns::RecordClass::IN);
+    let response = match dns::Query::do_query(hostname, dns::RecordType::A, dns::RecordClass::IN) {
+        Some(r) => r,
+        None => {
+            eprintln!("Query Failed");
+            std::process::exit(1);
+        }
+    };
 
-    query.dump_query();
+    println!("{:?}", response)
 }
