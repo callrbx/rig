@@ -1,3 +1,5 @@
+ [![pipeline status](https://gitlab.parker.systems/drew/rig-dns-tool/badges/main/pipeline.svg)](https://gitlab.parker.systems/drew/rig-dns-tool/-/commits/main) 
+
 # Rig DNS Tool
 
 Notice: this tool is very much a WIP.
