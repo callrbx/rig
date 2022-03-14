@@ -13,12 +13,12 @@ pub enum RecordType {
     MF,    // 4 a mail forwarder (Obsolete - use MX)
     CNAME, // 5 the canonical name for an alias
     SOA,   // 6 marks the start of a zone of authority
-    MB,    // 7 a mailbox domain name (EXPERIMENTAL)
+    MB,    // 7 a mailbox hostname name (EXPERIMENTAL)
     MG,    // 8 a mail group member (EXPERIMENTAL)
-    MR,    // 9 a mail rename domain name (EXPERIMENTAL)
+    MR,    // 9 a mail rename hostname name (EXPERIMENTAL)
     NULL,  // 10 a null RR (EXPERIMENTAL)
     WKS,   // 11 a well known service description
-    PTR,   // 12 a domain name pointer
+    PTR,   // 12 a hostname name pointer
     HINFO, // 13 host information
     MINFO, // 14 mailbox or mail list information
     MX,    // 15 mail exchange
@@ -88,11 +88,11 @@ pub struct Question {
 }
 
 impl Question {
-    fn generate_label(domain: String) -> Vec<u8> {
+    fn generate_label(hostname: String) -> Vec<u8> {
         let mut label: Vec<u8> = Vec::new();
 
         // Label consists of len field, followed by chunk
-        for chunk in domain.split(".") {
+        for chunk in hostname.split(".") {
             let l = chunk.len();
             label.push(l as u8);
             label.extend(chunk.as_bytes());
@@ -103,9 +103,9 @@ impl Question {
         return label;
     }
 
-    fn new(domain: String, rtype: RecordType, rclass: RecordClass) -> Self {
+    fn new(hostname: String, rtype: RecordType, rclass: RecordClass) -> Self {
         Self {
-            name: Self::generate_label(domain),
+            name: Self::generate_label(hostname),
             rtype: rtype, // hard code A for now
             rclass: rclass,
         }
@@ -128,10 +128,10 @@ pub struct Query {
 }
 
 impl Query {
-    pub fn new(domain: String, rtype: RecordType, rclass: RecordClass) -> Self {
+    pub fn new(hostname: String, rtype: RecordType, rclass: RecordClass) -> Self {
         let mut query = Query {
             header: Header::new(None),
-            question: Question::new(domain, rtype, rclass),
+            question: Question::new(hostname, rtype, rclass),
         };
 
         // enable "standard query" bits
@@ -187,8 +187,6 @@ impl Query {
 
     pub fn dump_query(&mut self) {
         let encoded = self.query_serialize();
-
-        println!("{:?}", encoded);
 
         let mut writer = BufWriter::new(std::io::stdout());
 
@@ -255,11 +253,11 @@ mod tests {
             0, 0, 1, 0, 1,
         ];
 
-        let domain = String::from("google.com");
+        let hostname = String::from("google.com");
         let rtype = RecordType::A;
         let rclass = RecordClass::IN;
 
-        let mut q = Query::new(domain, rtype, rclass);
+        let mut q = Query::new(hostname, rtype, rclass);
 
         // ignore the randomized ID
         assert!(q.query_serialize()[2..] == expected[2..]);
