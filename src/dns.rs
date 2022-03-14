@@ -57,6 +57,27 @@ impl RecordType {
             }
         }
     }
+
+    pub fn get_str(&self) -> &'static str {
+        match self {
+            RecordType::A => "A",
+            RecordType::NS => "NS",
+            RecordType::MD => "MD",
+            RecordType::MF => "MF",
+            RecordType::CNAME => "CNAME",
+            RecordType::SOA => "SOA",
+            RecordType::MB => "MB",
+            RecordType::MG => "MG",
+            RecordType::MR => "MR",
+            RecordType::NULL => "NULL",
+            RecordType::WKS => "WKS",
+            RecordType::PTR => "PTW",
+            RecordType::HINFO => "HINFO",
+            RecordType::MINFO => "MINFO",
+            RecordType::MX => "MX",
+            RecordType::TXT => "TXT",
+        }
+    }
 }
 
 // CLASS fields appear in resource records - RFC 1035 3.2.4
@@ -81,6 +102,15 @@ impl RecordClass {
             }
         }
     }
+
+    pub fn get_str(&self) -> &'static str {
+        match self {
+            RecordClass::IN => "IN",
+            RecordClass::CS => "CS",
+            RecordClass::CH => "CH",
+            RecordClass::HS => "HS",
+        }
+    }
 }
 
 // Header Flags bitfield
@@ -101,7 +131,7 @@ bitfield! {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-struct Header {
+pub struct Header {
     id: u16,
     flags: HeaderFlags<[u16; 1]>,
     qd_count: u16,
@@ -154,6 +184,12 @@ pub struct Question {
 }
 
 impl Question {
+    pub fn get_name_str(&self) -> String {
+        let (name, _) = get_name(&self.name);
+
+        return name;
+    }
+
     fn generate_label(hostname: String) -> Vec<u8> {
         let mut label: Vec<u8> = Vec::new();
 
@@ -170,7 +206,8 @@ impl Question {
     }
 
     fn from_bytes(bytes: Vec<u8>) -> (Self, usize) {
-        let (name, mut ptr) = get_name(&bytes);
+        let (_, mut ptr) = get_name(&bytes);
+
         let mut cur = Cursor::new(bytes[ptr..].to_vec());
 
         let rtype =
@@ -184,7 +221,7 @@ impl Question {
             rclass: rclass,
         };
 
-        ptr += name.len() + 1; //advance remaining bytes past question
+        ptr += 4; //advance remaining bytes past question
 
         return (question, ptr);
     }
@@ -200,12 +237,12 @@ impl Question {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Answer {
-    domain: u16,
-    rtype: RecordType,
-    rclass: RecordClass,
-    ttl: u32,
-    len: u16,
-    data: Vec<u8>,
+    pub domain: u16,
+    pub rtype: RecordType,
+    pub rclass: RecordClass,
+    pub ttl: u32,
+    pub len: u16,
+    pub data: Vec<u8>,
 }
 
 impl Answer {
@@ -343,15 +380,13 @@ impl Query {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Response {
-    header: Header,
-    question: Question,
-    answer: Vec<Answer>,
+    pub header: Header,
+    pub question: Question,
+    pub answer: Vec<Answer>,
 }
 
 impl Response {
     fn from_bytes(bytes: Vec<u8>) -> Self {
-        let mut _ptr = 0;
-
         if bytes.len() < HDR_SIZE {
             eprintln!("Failed to deserialize header; only {} bytes", bytes.len());
             std::process::exit(1);
@@ -362,6 +397,8 @@ impl Response {
             .with_fixint_encoding()
             .deserialize(&bytes[..HDR_SIZE])
             .unwrap();
+
+        let mut _ptr = HDR_SIZE;
 
         let (question, ptr) = Question::from_bytes(bytes[HDR_SIZE..].to_vec());
         _ptr += ptr;
