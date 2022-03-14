@@ -14,6 +14,8 @@ This tool is an attempt to bring the more common usages of dig to the front, whi
 ## Usage
 Current options are limited to something similar to a `dig +short`, but we're getting there.
 
+Also hardcoded to query Cloudflare (1.1.1.1) Resolver.
+
 ```
 ❯ rig google.com
 google.com.
