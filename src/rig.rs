@@ -44,6 +44,7 @@ fn main() {
     if args.hostnames.len() >= 1 {
         for d in args.hostnames {
             librig::do_lookup(d, server.clone());
+            println!("");
         }
     } else {
         eprintln!("No hostname provided");
