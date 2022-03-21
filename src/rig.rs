@@ -1,3 +1,4 @@
+use core::num;
 use std::env;
 use structopt::StructOpt;
 
@@ -42,11 +43,13 @@ fn main() {
     };
 
     let num_domains = args.hostnames.len();
+    let mut done_domains = 0;
 
     if args.hostnames.len() >= 1 {
         for d in args.hostnames {
             librig::do_lookup(d, server.clone());
-            if num_domains >= 2 {
+            done_domains += 1;
+            if done_domains < num_domains {
                 println!("");
             }
         }
