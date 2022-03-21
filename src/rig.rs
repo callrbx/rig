@@ -41,10 +41,14 @@ fn main() {
         None => None,
     };
 
+    let num_domains = args.hostnames.len();
+
     if args.hostnames.len() >= 1 {
         for d in args.hostnames {
             librig::do_lookup(d, server.clone());
-            println!("");
+            if num_domains >= 2 {
+                println!("");
+            }
         }
     } else {
         eprintln!("No hostname provided");
