@@ -553,18 +553,25 @@ mod tests {
         // at the time of this test writing, dns.google.com resolves to
         // 8.8.8.8          560 IN A
         // 8.8.4.4          560 IN A
-        assert!(response.answer.len() == 2);
-        assert!(
-            response.answer[0].data[0] == 8
-                && response.answer[0].data[1] == 8
-                && response.answer[0].data[2] == 8
-                && response.answer[0].data[3] == 8
-        );
-        assert!(
-            response.answer[1].data[0] == 8
+        // this is kind of a hack, but it ensures that regardless of order the tests match
+        let query_worked = ((response.answer[0].data[0] == 8
+            && response.answer[0].data[1] == 8
+            && response.answer[0].data[2] == 8
+            && response.answer[0].data[3] == 8)
+            && (response.answer[1].data[0] == 8
                 && response.answer[1].data[1] == 8
                 && response.answer[1].data[2] == 4
-                && response.answer[1].data[3] == 4
-        );
+                && response.answer[1].data[3] == 4))
+            || ((response.answer[0].data[0] == 8
+                && response.answer[0].data[1] == 8
+                && response.answer[0].data[2] == 4
+                && response.answer[0].data[3] == 4)
+                && (response.answer[1].data[0] == 8
+                    && response.answer[1].data[1] == 8
+                    && response.answer[1].data[2] == 8
+                    && response.answer[1].data[3] == 8));
+
+        assert!(response.answer.len() == 2);
+        assert!(query_worked);
     }
 }
