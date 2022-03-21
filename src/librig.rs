@@ -1,7 +1,14 @@
 use dns::Answer;
-use std::net::Ipv4Addr;
+use std::{
+    fs::File,
+    io::{self, BufRead},
+    net::Ipv4Addr,
+    path::Path,
+};
 
 mod dns;
+
+const RESOLVCONF: &str = "/etc/resolv.conf";
 
 fn display_answer(r: Answer) {
     match r.len {
@@ -18,13 +25,46 @@ fn display_answer(r: Answer) {
     }
 }
 
-pub fn do_lookup(hostname: String, server: Option<String>) {
-    let response = match server {
-        Some(server) => {
-            dns::Query::do_query_server(hostname, server, dns::RecordType::A, dns::RecordClass::IN)
-        }
-        None => dns::Query::do_query(hostname, dns::RecordType::A, dns::RecordClass::IN),
+fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
+
+pub fn parse_resolvconf_nameserver(conf: Option<String>) -> String {
+    let config_file = match conf {
+        Some(c) => c,
+        None => RESOLVCONF.to_string(),
     };
+
+    if let Ok(lines) = read_lines(config_file) {
+        // Consumes the iterator, returns an (Optional) String
+        for line in lines {
+            if let Ok(data) = line {
+                if data.starts_with("nameserver") {
+                    let nameserver = data
+                        .split_ascii_whitespace()
+                        .next_back()
+                        .unwrap_or("127.0.0.1")
+                        .to_string();
+                    return nameserver;
+                }
+            }
+        }
+    }
+
+    return String::from("127.0.0.1");
+}
+
+pub fn do_lookup(hostname: String, nameserver: String) {
+    let response = dns::Query::do_query(
+        hostname,
+        nameserver.to_string(),
+        dns::RecordType::A,
+        dns::RecordClass::IN,
+    );
 
     match response {
         Some(r) => {

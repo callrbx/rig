@@ -6,7 +6,6 @@ use bincode::Options;
 use bitfield::bitfield;
 use serde::{Deserialize, Serialize};
 
-const ADDR: &str = "8.8.8.8:53";
 const BUF_SIZE: usize = 1024;
 const HDR_SIZE: usize = 12;
 const RESP_DATA_SIZE: usize = 12;
@@ -286,21 +285,7 @@ pub struct Query {
 }
 
 impl Query {
-    pub fn do_query(hostname: String, rtype: RecordType, rclass: RecordClass) -> Option<Response> {
-        let mut query = Self::new(hostname, rtype, rclass);
-
-        let response = match query.send_query(ADDR.to_string()) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("Query failed: {}", e);
-                return None;
-            }
-        };
-
-        return Some(response);
-    }
-
-    pub fn do_query_server(
+    pub fn do_query(
         hostname: String,
         server: String,
         rtype: RecordType,
@@ -547,8 +532,9 @@ mod tests {
     #[test]
     fn test_google_a_rec() {
         let hostname = String::from("dns.google.com");
+        let server = String::from("8.8.8.8:53");
 
-        let response = Query::do_query(hostname, RecordType::A, RecordClass::IN).unwrap();
+        let response = Query::do_query(hostname, server, RecordType::A, RecordClass::IN).unwrap();
 
         // at the time of this test writing, dns.google.com resolves to
         // 8.8.8.8          560 IN A

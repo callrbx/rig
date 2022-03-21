@@ -1,4 +1,3 @@
-use core::num;
 use std::env;
 use structopt::StructOpt;
 
@@ -29,25 +28,26 @@ fn main() {
         std::process::exit(1);
     }
 
-    let server: Option<String> = match args.server {
-        Some(s) => {
-            if !s.contains(":") {
-                let mut server: String = String::from(s);
-                server.push_str(":53");
-                Some(server)
-            } else {
-                Some(s)
-            }
-        }
-        None => None,
+    // parse DNS server
+    // if set in args, use that one
+    // otherwise, parse /etc/resolv.conf and find the nameserver
+    // append ports in either case
+    let mut nameserver: String = match args.server {
+        Some(ns) => ns,
+        None => librig::parse_resolvconf_nameserver(None),
     };
+
+    // add specified port to the namserver
+    if !nameserver.contains(":") {
+        nameserver.push_str(":53");
+    }
 
     let num_domains = args.hostnames.len();
     let mut done_domains = 0;
 
     if args.hostnames.len() >= 1 {
         for d in args.hostnames {
-            librig::do_lookup(d, server.clone());
+            librig::do_lookup(d, nameserver.clone());
             done_domains += 1;
             if done_domains < num_domains {
                 println!("");
