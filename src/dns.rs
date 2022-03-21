@@ -6,7 +6,7 @@ use bincode::Options;
 use bitfield::bitfield;
 use serde::{Deserialize, Serialize};
 
-const ADDR: &str = "1.1.1.1:53";
+const ADDR: &str = "8.8.8.8:53";
 const BUF_SIZE: usize = 1024;
 const HDR_SIZE: usize = 12;
 const RESP_DATA_SIZE: usize = 12;
@@ -300,6 +300,25 @@ impl Query {
         return Some(response);
     }
 
+    pub fn do_query_server(
+        hostname: String,
+        server: String,
+        rtype: RecordType,
+        rclass: RecordClass,
+    ) -> Option<Response> {
+        let mut query = Self::new(hostname, rtype, rclass);
+
+        let response = match query.send_query(server) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Query failed: {}", e);
+                return None;
+            }
+        };
+
+        return Some(response);
+    }
+
     fn new(hostname: String, rtype: RecordType, rclass: RecordClass) -> Self {
         let mut query = Query {
             header: Header::new(None),
@@ -523,5 +542,29 @@ mod tests {
         let bytes: Vec<u8> = vec![6, 103, 111, 111, 103, 108, 101, 3, 99, 111, 109, 0];
 
         assert!(Question::generate_label("google.com".to_string()) == bytes);
+    }
+
+    #[test]
+    fn test_google_a_rec() {
+        let hostname = String::from("dns.google.com");
+
+        let response = Query::do_query(hostname, RecordType::A, RecordClass::IN).unwrap();
+
+        // at the time of this test writing, dns.google.com resolves to
+        // 8.8.8.8          560 IN A
+        // 8.8.4.4          560 IN A
+        assert!(response.answer.len() == 2);
+        assert!(
+            response.answer[0].data[0] == 8
+                && response.answer[0].data[1] == 8
+                && response.answer[0].data[2] == 8
+                && response.answer[0].data[3] == 8
+        );
+        assert!(
+            response.answer[1].data[0] == 8
+                && response.answer[1].data[1] == 8
+                && response.answer[1].data[2] == 4
+                && response.answer[1].data[3] == 4
+        );
     }
 }

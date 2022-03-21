@@ -18,17 +18,23 @@ fn display_answer(r: Answer) {
     }
 }
 
-pub fn do_lookup(hostname: String) {
-    let response = match dns::Query::do_query(hostname, dns::RecordType::A, dns::RecordClass::IN) {
-        Some(r) => r,
-        None => {
-            eprintln!("Query Failed");
-            std::process::exit(1);
+pub fn do_lookup(hostname: String, server: Option<String>) {
+    let response = match server {
+        Some(server) => {
+            dns::Query::do_query_server(hostname, server, dns::RecordType::A, dns::RecordClass::IN)
         }
+        None => dns::Query::do_query(hostname, dns::RecordType::A, dns::RecordClass::IN),
     };
 
-    println!("{}", response.question.get_name_str());
-    for a in response.answer {
-        display_answer(a);
+    match response {
+        Some(r) => {
+            println!("{}", r.question.get_name_str());
+            for a in r.answer {
+                display_answer(a);
+            }
+        }
+        None => {
+            eprintln!("DNS Lookup failed");
+        }
     }
 }
